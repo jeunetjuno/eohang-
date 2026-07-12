@@ -247,9 +247,11 @@ function makeTurtle() {
 function makeSeahorse() {
   // anchors near a kelp stalk, bobs in place
   const anchor = kelp.length ? pick(kelp).x + pick([-2, 2, 3]) : rnd(3, W - 4);
+  const baseY = rnd(floorY() - 9, floorY() - 4);
   return {
     x: clamp(anchor, 2, W - 4),
-    baseY: rnd(floorY() - 9, floorY() - 4),
+    y: baseY,
+    baseY,
     vx: rnd(-0.3, 0.3),
     phase: rnd(0, Math.PI * 2), sp: rnd(0.8, 1.5),
     col: pick([222, 216, 179, 215, 141]),
@@ -496,6 +498,7 @@ function update() {
 let grid;
 function put(x, y, ch, col) {
   x = Math.round(x); y = Math.round(y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
   if (x < 0 || x >= W || y < 0 || y >= H) return;
   grid[y][x] = [ch, col];
 }
@@ -730,8 +733,7 @@ function tryAutoSound() {
 let last = performance.now(), acc = 0;
 let frames = 0, fpsShown = 30, lastFpsAt = performance.now();
 if (resizeGrid()) populate();
-function loop(now) {
-  requestAnimationFrame(loop);
+function tick(now) {
   const dt = Math.min(100, now - last);
   last = now;
   if (paused) return;
@@ -752,9 +754,33 @@ function loop(now) {
     render(fpsShown);
   }
 }
+
+// WKWebView (the Mac app) drops rAF callbacks registered during the initial
+// load of a file:// page, freezing the tank. Run the loop as a superseding
+// chain and let a watchdog timer re-arm it whenever it stalls.
+let lastTickAt = 0;
+let rafSerial = 0;
+function startLoop() {
+  const id = ++rafSerial;
+  const step = (now) => {
+    if (id !== rafSerial) return; // an older chain got superseded — let it die
+    requestAnimationFrame(step);
+    lastTickAt = now;
+    tick(now);
+  };
+  requestAnimationFrame(step);
+}
+
 render(fpsShown);
 setPaused(paused);
-requestAnimationFrame(loop);
+startLoop();
+setInterval(() => {
+  const now = performance.now();
+  if (now - lastTickAt > 500) {
+    startLoop();
+    tick(now);
+  }
+}, 200);
 
 let resizeTimer = 0;
 new ResizeObserver(() => {
@@ -808,7 +834,9 @@ document.getElementById('bCrab').addEventListener('click', actions.c);
 document.getElementById('bDel').addEventListener('click', actions.x);
 pauseBtn.addEventListener('click', () => setPaused(!paused));
 soundBtn.addEventListener('click', actions.m);
-setSound(true); // will silently fail if the browser wants a gesture first
+// autoplay only inside the Mac app's WKWebView; in ordinary browsers (and
+// embedded Chromium panes that don't enforce a gesture) wait for a click
+if (!window.chrome) setSound(true);
 
 // collapsible dock: when open, the water column ends above it (nothing hidden);
 // when closed, the water fills down to the rim

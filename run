@@ -1,0 +1,10 @@
+#!/bin/sh
+DIR="$(dirname "$0")"
+if command -v node >/dev/null 2>&1; then
+  exec node "$DIR/haecho.js" "$@"
+elif command -v deno >/dev/null 2>&1; then
+  exec deno run "$DIR/haecho.js" "$@"
+else
+  echo "haecho: needs node or deno" >&2
+  exit 1
+fi
